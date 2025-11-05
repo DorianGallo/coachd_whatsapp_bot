@@ -12,6 +12,15 @@ app.use(express.urlencoded({ extended: true }));
 // Import menu flows
 const { handleMessage, getMainMenu } = require('./flows/menuFlows');
 
+// Add health check endpoint
+app.get('/health', (req, res) => {
+    res.status(200).json({ 
+        status: 'OK', 
+        message: 'WhatsApp Bot is running',
+        timestamp: new Date().toISOString()
+    });
+});
+
 // Webhook verification
 app.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
