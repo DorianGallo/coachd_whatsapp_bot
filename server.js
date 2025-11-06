@@ -108,6 +108,18 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
+// 🔽 TEMPORARY TEST ROUTE RIGHT HERE 🔽
+app.get('/test-meta', (req, res) => {
+    console.log('✅ Meta connectivity test successful - Server is reachable');
+    res.json({ 
+        status: 'reachable', 
+        message: 'Meta can reach this server',
+        timestamp: new Date().toISOString(),
+        webhook_url: 'https://promising-pattie-supportmenu-c14577cc.koyeb.app/webhook'
+    });
+});
+// 🔼 END OF TEMPORARY TEST ROUTE 🔼
+
 async function handleIncomingMessage(message) {
     const userPhone = message.from;
     const userMessage = message.text.body.toLowerCase().trim();
