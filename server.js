@@ -10,9 +10,19 @@ app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Import menu flows
-const { handleMessage, getMainMenu } = require('./flows/menuFlows');
+const { handleMessage, getMainMenu } = require('./flow');
 
-// Add health check endpoint
+// Root endpoint
+app.get('/', (req, res) => {
+    res.json({ 
+        status: 'OK', 
+        service: 'WhatsApp Business Bot',
+        message: 'Service is running',
+        timestamp: new Date().toISOString()
+    });
+});
+
+// Health check endpoint
 app.get('/health', (req, res) => {
     res.status(200).json({ 
         status: 'OK', 
@@ -23,41 +33,78 @@ app.get('/health', (req, res) => {
 
 // Webhook verification
 app.get('/webhook', (req, res) => {
+    console.log('🔐 Webhook verification called with:', req.query);
+    
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
 
+    console.log('🔐 Expected VERIFY_TOKEN:', process.env.VERIFY_TOKEN);
+    console.log('🔐 Received token:', token);
+    
     if (mode === 'subscribe' && token === process.env.VERIFY_TOKEN) {
-        console.log('WEBHOOK_VERIFIED');
+        console.log('✅ WEBHOOK_VERIFIED');
         res.status(200).send(challenge);
     } else {
+        console.log('❌ Verification failed - mode:', mode, 'token match:', token === process.env.VERIFY_TOKEN);
         res.sendStatus(403);
     }
 });
 
 // Webhook handler
 app.post('/webhook', async (req, res) => {
+    console.log('📨 WEBHOOK RECEIVED - FULL BODY:', JSON.stringify(req.body, null, 2));
+    
     try {
         const body = req.body;
+        
+        // Return 200 immediately to acknowledge receipt
+        res.status(200).send('EVENT_RECEIVED');
 
-        if (body.object === 'whatsapp_business_account') {
+        console.log('🔍 Webhook object:', body.object);
+        console.log('🔍 Webhook entries count:', body.entry?.length);
+
+        if (body.object === 'whatsapp_business_account' && body.entry) {
             for (const entry of body.entry) {
+                console.log('🔍 Entry ID:', entry.id);
+                console.log('🔍 Entry changes count:', entry.changes?.length);
+                
                 for (const change of entry.changes) {
-                    if (change.field === 'messages') {
+                    console.log('🔍 Change field:', change.field);
+                    console.log('🔍 Change value type:', typeof change.value);
+                    
+                    if (change.field === 'messages' && change.value) {
+                        console.log('🔍 Messages array:', change.value.messages);
                         const message = change.value.messages?.[0];
-                        if (message && message.type === 'text') {
-                            await handleIncomingMessage(message);
+                        
+                        if (message) {
+                            console.log('📱 Message details:', {
+                                from: message.from,
+                                type: message.type,
+                                timestamp: message.timestamp,
+                                text: message.text?.body
+                            });
+                            
+                            if (message.type === 'text' && message.text?.body) {
+                                console.log('🚀 Processing text message from:', message.from, 'text:', message.text.body);
+                                await handleIncomingMessage(message);
+                            } else {
+                                console.log('⚠️ Ignoring non-text message type:', message.type);
+                            }
+                        } else {
+                            console.log('⚠️ No message found in messages array');
                         }
+                    } else {
+                        console.log('⚠️ Ignoring non-message change field:', change.field);
                     }
                 }
             }
-            res.status(200).send('EVENT_RECEIVED');
         } else {
-            res.sendStatus(404);
+            console.log('❌ Invalid webhook object or no entries:', body.object);
         }
     } catch (error) {
-        console.error('Error in webhook:', error);
-        res.sendStatus(500);
+        console.error('💥 Error in webhook:', error);
+        console.error('💥 Error stack:', error.stack);
     }
 });
 
@@ -65,13 +112,21 @@ async function handleIncomingMessage(message) {
     const userPhone = message.from;
     const userMessage = message.text.body.toLowerCase().trim();
     
-    console.log(`Received message from ${userPhone}: ${userMessage}`);
+    console.log(`🤖 Handling message from ${userPhone}: "${userMessage}"`);
     
     try {
+        console.log('🔄 Calling handleMessage function...');
         const response = await handleMessage(userMessage, userPhone);
+        console.log('✅ handleMessage returned:', response);
+        
+        console.log('🔄 Sending WhatsApp response...');
         await sendWhatsAppMessage(userPhone, response);
+        console.log('✅ Response sent successfully');
+        
     } catch (error) {
-        console.error('Error handling message:', error);
+        console.error('💥 Error handling message:', error);
+        console.error('💥 Error stack:', error.stack);
+        
         await sendWhatsAppMessage(userPhone, 
             "⚠️ Lo siento, ha ocurrido un error. Por favor, intenta nuevamente."
         );
@@ -80,6 +135,9 @@ async function handleIncomingMessage(message) {
 
 async function sendWhatsAppMessage(to, message) {
     try {
+        console.log('📤 Sending message to:', to);
+        console.log('📤 Message content:', message);
+        
         const response = await axios.post(
             `https://graph.facebook.com/v17.0/${process.env.PHONE_NUMBER_ID}/messages`,
             {
@@ -94,12 +152,20 @@ async function sendWhatsAppMessage(to, message) {
                 }
             }
         );
-        console.log('Message sent successfully:', response.data);
+        console.log('✅ Message sent successfully:', response.data);
+        return response.data;
     } catch (error) {
-        console.error('Error sending message:', error.response?.data || error.message);
+        console.error('💥 Error sending message:');
+        console.error('💥 Status:', error.response?.status);
+        console.error('💥 Data:', error.response?.data);
+        console.error('💥 Message:', error.message);
+        throw error;
     }
 }
 
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+    console.log(`🚀 Server is running on port ${PORT}`);
+    console.log(`❤️ Health check: http://localhost:${PORT}/health`);
+    console.log(`🏠 Root endpoint: http://localhost:${PORT}/`);
+    console.log(`🔗 Webhook: http://localhost:${PORT}/webhook`);
 });
