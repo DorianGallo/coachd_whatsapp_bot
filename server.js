@@ -9,8 +9,8 @@ const PORT = process.env.PORT || 3000;
 app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Import menu flows
-const { handleMessage, getMainMenu } = require('./flow');
+// Import menu flows - FIXED IMPORT
+const menuFlows = require('./flow');
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -116,7 +116,8 @@ async function handleIncomingMessage(message) {
     
     try {
         console.log('🔄 Calling handleMessage function...');
-        const response = await handleMessage(userMessage, userPhone);
+        // FIXED: Call handleMessage from the menuFlows instance
+        const response = await menuFlows.handleMessage(userMessage, userPhone);
         console.log('✅ handleMessage returned:', response);
         
         console.log('🔄 Sending WhatsApp response...');
