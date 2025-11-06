@@ -1,237 +1,171 @@
-class MenuFlows {
-    constructor() {
-        this.userSessions = new Map();
+const express = require('express');
+const bodyParser = require('body-parser');
+const axios = require('axios');
+require('dotenv').config();
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.use(bodyParser.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Import menu flows
+const { handleMessage, getMainMenu } = require('./flow');
+
+// Root endpoint
+app.get('/', (req, res) => {
+    res.json({ 
+        status: 'OK', 
+        service: 'WhatsApp Business Bot',
+        message: 'Service is running',
+        timestamp: new Date().toISOString()
+    });
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.status(200).json({ 
+        status: 'OK', 
+        message: 'WhatsApp Bot is running',
+        timestamp: new Date().toISOString()
+    });
+});
+
+// Webhook verification
+app.get('/webhook', (req, res) => {
+    console.log('🔐 Webhook verification called with:', req.query);
+    
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    const challenge = req.query['hub.challenge'];
+
+    console.log('🔐 Expected VERIFY_TOKEN:', process.env.VERIFY_TOKEN);
+    console.log('🔐 Received token:', token);
+    
+    if (mode === 'subscribe' && token === process.env.VERIFY_TOKEN) {
+        console.log('✅ WEBHOOK_VERIFIED');
+        res.status(200).send(challenge);
+    } else {
+        console.log('❌ Verification failed - mode:', mode, 'token match:', token === process.env.VERIFY_TOKEN);
+        res.sendStatus(403);
     }
+});
 
-    getMainMenu() {
-        return `¡Hola! Gracias por comunicarte con Coach D. method.
+// Webhook handler
+app.post('/webhook', async (req, res) => {
+    console.log('📨 WEBHOOK RECEIVED - FULL BODY:', JSON.stringify(req.body, null, 2));
+    
+    try {
+        const body = req.body;
+        
+        // Return 200 immediately to acknowledge receipt
+        res.status(200).send('EVENT_RECEIVED');
 
-Estamos listos para ayudarte en tu camino hacia el bienestar. Por favor, selecciona una opción del menú principal para comenzar.
+        console.log('🔍 Webhook object:', body.object);
+        console.log('🔍 Webhook entries count:', body.entry?.length);
 
-**Menú Principal**
-
-1. Información sobre planes y programas
-2. Ayuda con pagos
-3. Soporte técnico (Aplicación, cuenta o dispositivos)
-4. Otros enlaces (Contacto, Ayuda general)
-
-*Por favor, responde con el número de tu opción (1, 2, 3, o 4)*`;
-    }
-
-    async handleMessage(userMessage, userPhone) {
-        const session = this.userSessions.get(userPhone) || { state: 'main_menu' };
-
-        try {
-            let response = '';
-            
-            switch (session.state) {
-                case 'main_menu':
-                    response = this.handleMainMenu(userMessage, session);
-                    break;
-                case 'plans_info':
-                    response = this.handlePlansInfo(userMessage, session);
-                    break;
-                case 'payment_help':
-                    response = this.handlePaymentHelp(userMessage, session);
-                    break;
-                case 'tech_support':
-                    response = this.handleTechSupport(userMessage, session);
-                    break;
-                case 'app_navigation':
-                    response = this.handleAppNavigation(userMessage, session);
-                    break;
-                default:
-                    response = this.getMainMenu();
+        if (body.object === 'whatsapp_business_account' && body.entry) {
+            for (const entry of body.entry) {
+                console.log('🔍 Entry ID:', entry.id);
+                console.log('🔍 Entry changes count:', entry.changes?.length);
+                
+                for (const change of entry.changes) {
+                    console.log('🔍 Change field:', change.field);
+                    console.log('🔍 Change value type:', typeof change.value);
+                    
+                    if (change.field === 'messages' && change.value) {
+                        console.log('🔍 Messages array:', change.value.messages);
+                        const message = change.value.messages?.[0];
+                        
+                        if (message) {
+                            console.log('📱 Message details:', {
+                                from: message.from,
+                                type: message.type,
+                                timestamp: message.timestamp,
+                                text: message.text?.body
+                            });
+                            
+                            if (message.type === 'text' && message.text?.body) {
+                                console.log('🚀 Processing text message from:', message.from, 'text:', message.text.body);
+                                await handleIncomingMessage(message);
+                            } else {
+                                console.log('⚠️ Ignoring non-text message type:', message.type);
+                            }
+                        } else {
+                            console.log('⚠️ No message found in messages array');
+                        }
+                    } else {
+                        console.log('⚠️ Ignoring non-message change field:', change.field);
+                    }
+                }
             }
-
-            this.userSessions.set(userPhone, session);
-            return response;
-
-        } catch (error) {
-            console.error('Error in handleMessage:', error);
-            return "⚠️ Lo siento, ha ocurrido un error. Volviendo al menú principal.\n\n" + this.getMainMenu();
+        } else {
+            console.log('❌ Invalid webhook object or no entries:', body.object);
         }
+    } catch (error) {
+        console.error('💥 Error in webhook:', error);
+        console.error('💥 Error stack:', error.stack);
     }
+});
 
-    handleMainMenu(userMessage, session) {
-        const option = userMessage.trim();
+async function handleIncomingMessage(message) {
+    const userPhone = message.from;
+    const userMessage = message.text.body.toLowerCase().trim();
+    
+    console.log(`🤖 Handling message from ${userPhone}: "${userMessage}"`);
+    
+    try {
+        console.log('🔄 Calling handleMessage function...');
+        const response = await handleMessage(userMessage, userPhone);
+        console.log('✅ handleMessage returned:', response);
         
-        switch (option) {
-            case '1':
-                session.state = 'plans_info';
-                return `¡Excelente! Para darte la información correcta, ¿ya has revisado nuestros folletos (brochures) informativos?
-
-*1.* No, aún no los he visto
-*2.* Sí, pero tengo más preguntas
-
-*Responde con 1 o 2*`;
-
-            case '2':
-                session.state = 'payment_help';
-                return `Entendido. Para ayudarte mejor con el proceso de pago, ¿has podido ver nuestro video tutorial sobre cómo completarlo?
-
-*1.* No he visto el tutorial
-*2.* Ya vi el tutorial, pero sigo con dudas
-
-*Responde con 1 o 2*`;
-
-            case '3':
-                session.state = 'tech_support';
-                return `Estamos para ayudarte con la parte técnica. Por favor, indícanos qué tipo de asistencia necesitas.
-
-*1.* Ayuda conectando dispositivos
-*2.* Ayuda sincronizando MyFitnessPal
-*3.* Ayuda navegando la aplicación
-*4.* Problemas para acceder a mi cuenta
-*5.* Reportar un inconveniente / error
-
-*Responde con el número de tu opción (1-5)*`;
-
-            case '4':
-                session.state = 'main_menu';
-                return `Aquí tienes nuestros enlaces de interés:
-
-* Pagina web: [WEBSITE_URL]
-* Página de Contacto: [CONTACT_PAGE_URL]
-* Centro de Ayuda: [HELP_CENTER_URL]
-
-Para volver al menú principal, escribe *menú* o cualquier mensaje.`;
-
-            default:
-                return this.getMainMenu();
-        }
-    }
-
-    handlePlansInfo(userMessage, session) {
-        const option = userMessage.trim();
+        console.log('🔄 Sending WhatsApp response...');
+        await sendWhatsAppMessage(userPhone, response);
+        console.log('✅ Response sent successfully');
         
-        switch (option) {
-            case '1':
-                session.state = 'main_menu';
-                return `Entendido. Aquí tienes los detalles de nuestros servicios principales para que puedas revisarlos:
-
-* Plan On-Demand: [ON_DEMAND_BROCHURE_URL]
-* Programa Intensivo de Control de Peso: [WEIGHT_PROGRAM_BROCHURE_URL]
-
-Tómate tu tiempo para leerlos. Si tienes dudas después, simplemente escribe "Ayuda".
-
-Para volver al menú principal, escribe *menú* o cualquier mensaje.`;
-
-            case '2':
-                session.state = 'main_menu';
-                return `Perfecto, por favor espera un momento y un asesor te atenderá para resolver todas tus dudas. 
-
-⏳ *Transferencia a humano en proceso...*
-
-Mientras esperas, puedes escribir cualquier mensaje para volver al menú principal.`;
-
-            default:
-                return `Por favor responde con:
-*1.* No, aún no los he visto
-*2.* Sí, pero tengo más preguntas`;
-        }
-    }
-
-    handlePaymentHelp(userMessage, session) {
-        const option = userMessage.trim();
+    } catch (error) {
+        console.error('💥 Error handling message:', error);
+        console.error('💥 Error stack:', error.stack);
         
-        switch (option) {
-            case '1':
-                session.state = 'main_menu';
-                return `¡No hay problema! Puedes ver el tutorial completo y realizar tu pago de forma segura en este enlace: [PAYMENT_TUTORIAL_URL]
-
-Para volver al menú principal, escribe *menú* o cualquier mensaje.`;
-
-            case '2':
-                session.state = 'main_menu';
-                return `Comprendo. Por favor espera un momento y un miembro del equipo te asistirá con el pago.
-
-⏳ *Transferencia a humano en proceso...*
-
-Mientras esperas, puedes escribir cualquier mensaje para volver al menú principal.`;
-
-            default:
-                return `Por favor responde con:
-*1.* No he visto el tutorial
-*2.* Ya vi el tutorial, pero sigo con dudas`;
-        }
-    }
-
-    handleTechSupport(userMessage, session) {
-        const option = userMessage.trim();
-        
-        switch (option) {
-            case '1':
-                session.state = 'main_menu';
-                return `Puedes encontrar ayuda para conectar dispositivos en nuestro artículo de ayuda: [DEVICES_HELP_URL]
-
-Para volver al menú principal, escribe *menú* o cualquier mensaje.`;
-
-            case '2':
-                session.state = 'main_menu';
-                return `Aquí tienes la guía para sincronizar MyFitnessPal: [MYFITNESSPAL_SYNC_URL]
-
-Para volver al menú principal, escribe *menú* o cualquier mensaje.`;
-
-            case '3':
-                session.state = 'app_navigation';
-                return `Perfecto. Tenemos un video de demostración que explica cómo usar todas las funciones de la aplicación. ¿Ya lo has visto?
-
-*1.* No he visto el video
-*2.* Sí, pero necesito más ayuda
-
-*Responde con 1 o 2*`;
-
-            case '4':
-                session.state = 'main_menu';
-                return `Para problemas de acceso a tu cuenta, un agente te asistirá personalmente.
-
-⏳ *Transferencia a humano en proceso...*
-
-Mientras esperas, puedes escribir cualquier mensaje para volver al menú principal.`;
-
-            case '5':
-                session.state = 'main_menu';
-                return `Para reportar un inconveniente o error, por favor visita: [REPORT_ISSUE_URL]
-
-Para volver al menú principal, escribe *menú* o cualquier mensaje.`;
-
-            default:
-                return `Por favor responde con el número de tu opción (1-5):
-*1.* Ayuda conectando dispositivos
-*2.* Ayuda sincronizando MyFitnessPal
-*3.* Ayuda navegando la aplicación
-*4.* Problemas para acceder a mi cuenta
-*5.* Reportar un inconveniente / error`;
-        }
-    }
-
-    handleAppNavigation(userMessage, session) {
-        const option = userMessage.trim();
-        
-        switch (option) {
-            case '1':
-                session.state = 'main_menu';
-                return `Aquí tienes el video de demostración de la aplicación: [APP_DEMO_VIDEO_URL]
-
-Después de verlo, si tienes más preguntas, escribe "Ayuda" para hablar con un agente.
-
-Para volver al menú principal, escribe *menú* o cualquier mensaje.`;
-
-            case '2':
-                session.state = 'main_menu';
-                return `Entendido. Un especialista te ayudará con la navegación de la aplicación.
-
-⏳ *Transferencia a humano en proceso...*
-
-Mientras esperas, puedes escribir cualquier mensaje para volver al menú principal.`;
-
-            default:
-                return `Por favor responde con:
-*1.* No he visto el video
-*2.* Sí, pero necesito más ayuda`;
-        }
+        await sendWhatsAppMessage(userPhone, 
+            "⚠️ Lo siento, ha ocurrido un error. Por favor, intenta nuevamente."
+        );
     }
 }
 
-module.exports = new MenuFlows();
+async function sendWhatsAppMessage(to, message) {
+    try {
+        console.log('📤 Sending message to:', to);
+        console.log('📤 Message content:', message);
+        
+        const response = await axios.post(
+            `https://graph.facebook.com/v17.0/${process.env.PHONE_NUMBER_ID}/messages`,
+            {
+                messaging_product: "whatsapp",
+                to: to,
+                text: { body: message }
+            },
+            {
+                headers: {
+                    'Authorization': `Bearer ${process.env.ACCESS_TOKEN}`,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+        console.log('✅ Message sent successfully:', response.data);
+        return response.data;
+    } catch (error) {
+        console.error('💥 Error sending message:');
+        console.error('💥 Status:', error.response?.status);
+        console.error('💥 Data:', error.response?.data);
+        console.error('💥 Message:', error.message);
+        throw error;
+    }
+}
+
+app.listen(PORT, () => {
+    console.log(`🚀 Server is running on port ${PORT}`);
+    console.log(`❤️ Health check: http://localhost:${PORT}/health`);
+    console.log(`🏠 Root endpoint: http://localhost:${PORT}/`);
+    console.log(`🔗 Webhook: http://localhost:${PORT}/webhook`);
+});
