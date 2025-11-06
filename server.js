@@ -1,10 +1,18 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 
-// Load .env file if it exists (for local development)
-// In production (Koyeb), environment variables are set at system level
-require('dotenv').config({ silent: true });
+// Only try to load .env if the file actually exists (local development)
+// In production (Koyeb), environment variables are injected by the platform
+const envPath = path.join(__dirname, '.env');
+if (fs.existsSync(envPath)) {
+    console.log('📁 Loading .env file for local development');
+    require('dotenv').config();
+} else {
+    console.log('☁️  No .env file found - using platform environment variables');
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
