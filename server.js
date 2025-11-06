@@ -10,7 +10,7 @@ app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Import menu flows
-const menuFlows = require('./flow');
+const { handleMessage, getMainMenu } = require('./flow');
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -108,18 +108,6 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// 🔽 TEMPORARY TEST ROUTE RIGHT HERE 🔽
-app.get('/test-meta', (req, res) => {
-    console.log('✅ Meta connectivity test successful - Server is reachable');
-    res.json({ 
-        status: 'reachable', 
-        message: 'Meta can reach this server',
-        timestamp: new Date().toISOString(),
-        webhook_url: 'https://promising-pattie-supportmenu-c14577cc.koyeb.app/webhook'
-    });
-});
-// 🔼 END OF TEMPORARY TEST ROUTE 🔼
-
 async function handleIncomingMessage(message) {
     const userPhone = message.from;
     const userMessage = message.text.body.toLowerCase().trim();
@@ -128,7 +116,7 @@ async function handleIncomingMessage(message) {
     
     try {
         console.log('🔄 Calling handleMessage function...');
-        const response = await menuFlows.handleMessage(userMessage, userPhone);
+        const response = await handleMessage(userMessage, userPhone);
         console.log('✅ handleMessage returned:', response);
         
         console.log('🔄 Sending WhatsApp response...');
